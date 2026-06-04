@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+
+# Dependencies (large external repos — install separately)
+deps/
+
+# Training artifacts
+checkpoints/
+videos/
+logs/
+
+# Weights & Biases local cache
+wandb/
+
+# Isaac Sim / OmniVerse
+_isaac_sim/
+*.usd
+*.usdc
+*.usdz
+*.nvdb
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets / local overrides
+.env
+*.local
+
+# Claude Code local settings
+.claude/settings.local.json

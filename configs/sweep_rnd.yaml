@@ -1,0 +1,59 @@
+# wandb sweep config — RND hyperparameter search on Distant Target task.
+#
+# Create the sweep:
+#   wandb sweep configs/sweep_rnd.yaml
+#   → prints: wandb agent ydawanka-purdue-university/CDL-HumanoidToolUse/<SWEEP_ID>
+#
+# Launch agents (one per GPU node):
+#   wandb agent ydawanka-purdue-university/CDL-HumanoidToolUse/<SWEEP_ID>
+
+program: launch.py
+
+method: bayes          # bayesian optimisation over the search space
+metric:
+  name: success_rate
+  goal: maximize
+
+early_terminate:
+  type: hyperband
+  min_iter: 3
+
+parameters:
+  config:
+    value: configs/base.yaml
+
+  seed:
+    values: [0, 1, 2]
+
+  # PPO
+  ppo.lr:
+    distribution: log_uniform_values
+    min: 1.0e-4
+    max: 1.0e-3
+
+  ppo.ent_coef:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.05
+
+  ppo.num_steps:
+    values: [16, 24, 32]
+
+  ppo.clip_coef:
+    values: [0.1, 0.2, 0.3]
+
+  # RND curiosity
+  curiosity.rnd.lr:
+    distribution: log_uniform_values
+    min: 5.0e-5
+    max: 5.0e-4
+
+  curiosity.rnd.output_dim:
+    values: [256, 512]
+
+  # Reward annealing
+  reward.alpha_start:
+    values: [0.5, 1.0, 2.0]
+
+  reward.alpha_anneal_steps:
+    values: [20_000_000, 50_000_000, 100_000_000]
