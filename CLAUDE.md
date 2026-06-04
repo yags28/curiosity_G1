@@ -30,6 +30,13 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - `src/envs/__init__.py` — `make_env(cfg)` factory maps task name → env class + config
 - `launch.py` — rewritten: SimulationApp created before Isaac Lab imports; `--no-wandb`, `--viewer`, `--resume` flags
 
+## GitHub / Version Control
+- Repo: `git@github.com:yags28/curiosity_G1.git` (branch: `main`)
+- SSH key: `~/.ssh/id_ed25519_github` — public key must be added to GitHub account
+- `.gitignore` excludes: `deps/` (525 MB), `checkpoints/`, `wandb/`, `logs/`, `videos/`, `.claude/settings.local.json`
+- Auto-push: cron runs `scripts/auto_push.sh` daily at 5 pm Eastern; log → `~/.local/share/cdl_push.log`
+- First push requires: (1) add SSH pub key to GitHub, (2) create empty `curiosity_G1` repo, (3) `git push -u origin main`
+
 ## Shell Aliases
 - `task1`–`task5` defined in `~/.bash_aliases` — run each unit test with Isaac Lab viewer (`--viewer`, headless off) via `/home/kevin/isaacsim/python.sh`
 
