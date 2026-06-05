@@ -16,7 +16,7 @@ env:
   num_envs: 32               # 8 GB VRAM; bump to 64 if no OOM
   episode_length: 1000       # shorter episodes for faster iteration locally
   device: cuda
-  headless: false
+  headless: true
   physics_dt: 0.005
   control_dt: 0.02
   randomise:

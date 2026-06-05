@@ -40,10 +40,12 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 ## Shell Aliases
 - `task1`–`task5` defined in `~/.bash_aliases` — run each unit test with Isaac Lab viewer (`--viewer`, headless off) via `/home/kevin/isaacsim/python.sh`
 
+## Experiment Results (Task 1 — distant_target)
+- **RND** (10M steps, no metrics): policy logstd=6.58 → likely 0% success; no CSV/wandb data
+- **DRND** (in progress, 5.35M/10M steps): sharp phase transition at ~4.8M steps → 44% → 100% success; CSV at `logs/distant_target__drnd__seed42/`
+- **RDD**: queued — run `bash scripts/run_rdd_after_drnd.sh` to auto-launch after DRND finishes
+
 ## Next Steps
-- Run comparative experiments: RND vs DRND vs RDD on Task 1
-  - RND:  `--curiosity rnd`   (running)
-  - DRND: `--curiosity drnd` (n_ensemble=5 in local.yaml)
-  - RDD:  `--curiosity rdd`  (n_ensemble=5, sigma=1.0 in local.yaml)
-- Plot comparison: `python3 plot_runs.py` (auto-detects logs/; or `--out compare.png`)
+- In a new terminal: `bash scripts/run_rdd_after_drnd.sh` (watches for DRND to finish, then auto-launches RDD headless)
+- After both done: `python3 plot_runs.py` to compare DRND vs RDD curves
 - Cluster: RCAC account/GPU allocation (when available)
