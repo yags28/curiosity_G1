@@ -42,10 +42,11 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 
 ## Experiment Results (Task 1 — distant_target)
 - **RND** (10M steps, no metrics): policy logstd=6.58 → likely 0% success; no CSV/wandb data
-- **DRND** (in progress, 5.35M/10M steps): sharp phase transition at ~4.8M steps → 44% → 100% success; CSV at `logs/distant_target__drnd__seed42/`
-- **RDD**: queued — run `bash scripts/run_rdd_after_drnd.sh` to auto-launch after DRND finishes
+- **DRND** (COMPLETE, 10M steps): phase transition at ~4.8M → 44% → **100% success** at end; ep_reward=+1.246, ep_len=12 steps; CSV at `logs/distant_target__drnd__seed42/`
+- **RDD** (COMPLETE, 10M steps): **0% success throughout**; ep_len collapsed to 5.5 steps; disagreement signal decayed too fast; CSV at `logs/distant_target__rdd__seed42/`
 
 ## Next Steps
-- In a new terminal: `bash scripts/run_rdd_after_drnd.sh` (watches for DRND to finish, then auto-launches RDD headless)
-- After both done: `python3 plot_runs.py` to compare DRND vs RDD curves
+- `python3 plot_runs.py --smooth 15 --out comparison.png` to generate DRND vs RDD comparison plot
+- Move to Task 2 (`elevated_button`) with DRND (best performer)
+- Run DRND on all 5 tasks for full evaluation
 - Cluster: RCAC account/GPU allocation (when available)
