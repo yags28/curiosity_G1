@@ -49,7 +49,7 @@ BUTTON_XY_RANGE = 0.20   # ±20% button XY (prevents memorising fixed location)
 MASS_RANGE      = 0.30   # ±30% box mass
 FRICTION_RANGE  = 0.50   # ±50% box friction
 
-BOX_NOMINAL_MASS             = 20.0   # kg — heavy enough for G1 (~35 kg) to stand on
+BOX_NOMINAL_MASS             = 10.0   # kg — reduced from 20 kg; robot can push but still stable to stand on
 BUTTON_NOMINAL_MASS          = 0.10   # kg
 BOX_NOMINAL_STATIC_FRICTION  = 0.80
 BOX_NOMINAL_DYNAMIC_FRICTION = 0.60
@@ -220,6 +220,36 @@ class ElevatedButtonEnv(ToolUseEnv):
             box_pos_rel, box_lin_vel, box_ang_vel, box_mass,
             btn_pos_rel, btn_vel, btn_mass,
         ], dim=-1)  # (N, 20)
+
+    # ── Dense reward shaping ──────────────────────────────────────────────────
+
+    def _get_rewards(self) -> torch.Tensor:
+        reward = super()._get_rewards()   # time_penalty + success_reward
+
+        env_z      = self.scene.env_origins[:, 2]               # (N,)
+        pelvis_z   = self.robot.data.root_pos_w[:, 2] - env_z   # local height (N,)
+
+        # 1. Box toward button XY — guides robot to push box under button
+        box_xy  = self.box.data.root_pos_w[:, :2]
+        btn_xy  = self.button.data.root_pos_w[:, :2]
+        dist    = torch.norm(box_xy - btn_xy, dim=-1)
+        box_proximity = torch.clamp(1.0 - dist / 1.5, 0.0, 1.0)
+        reward += 0.0005 * box_proximity
+
+        # 2. Climbing bonus — pelvis rises above normal standing (~0.75 m) when on box
+        climbing = torch.clamp((pelvis_z - 0.85) / 0.20, 0.0, 1.0)
+        reward += 0.001 * climbing
+
+        # 3. Hand height toward button — any body reaching button Z
+        #    Proxy: pelvis Z fraction toward button Z (critic already knows button pos)
+        btn_z       = self.button.data.root_pos_w[:, 2] - env_z  # local btn height (N,)
+        hand_height = torch.clamp((pelvis_z - 0.75) / (btn_z - 0.75 + 1e-6), 0.0, 1.0)
+        reward += 0.001 * hand_height
+
+        self.extras["box_proximity_rate"] = box_proximity.mean().item()
+        self.extras["climbing_rate"]      = (climbing > 0.5).float().mean().item()
+
+        return reward
 
     # ── Success detection ─────────────────────────────────────────────────────
 

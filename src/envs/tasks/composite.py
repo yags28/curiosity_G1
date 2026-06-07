@@ -277,6 +277,42 @@ class CompositeEnv(ToolUseEnv):
             wr_pos_rel,  zeros6,       wr_mass,
         ], dim=-1)   # (N, 40)
 
+    # ── Dense reward shaping ──────────────────────────────────────────────────
+
+    def _get_rewards(self) -> torch.Tensor:
+        reward = super()._get_rewards()   # time_penalty + success_reward
+
+        env_z    = self.scene.env_origins[:, 2]                        # (N,)
+        env_x    = self.scene.env_origins[:, 0]                        # (N,)
+        pelvis_z = self.robot.data.root_pos_w[:, 2] - env_z            # local Z (N,)
+        pelvis_x = self.robot.data.root_pos_w[:, 0] - env_x            # local X (N,)
+
+        # 1. Wall traversal — reward for moving toward and through the gap at X=1.5 m
+        traversal = torch.clamp((pelvis_x - 0.5) / (WALL_X - 0.5), 0.0, 1.5)
+        reward += 0.0003 * traversal
+
+        # 2. Box toward button XY — guides robot to push box under button
+        box_xy = self.box.data.root_pos_w[:, :2]
+        btn_xy = self.button.data.root_pos_w[:, :2]
+        dist   = torch.norm(box_xy - btn_xy, dim=-1)
+        box_proximity = torch.clamp(1.0 - dist / 2.0, 0.0, 1.0)
+        reward += 0.0005 * box_proximity
+
+        # 3. Climbing bonus — pelvis rises above normal standing (~0.75 m) when on box
+        climbing = torch.clamp((pelvis_z - 0.85) / 0.20, 0.0, 1.0)
+        reward += 0.001 * climbing
+
+        # 4. Hand height toward button — pelvis Z fraction toward button Z
+        btn_z       = self.button.data.root_pos_w[:, 2] - env_z
+        hand_height = torch.clamp((pelvis_z - 0.75) / (btn_z - 0.75 + 1e-6), 0.0, 1.0)
+        reward += 0.001 * hand_height
+
+        self.extras["traversal_rate"]     = (traversal > 1.0).float().mean().item()
+        self.extras["box_proximity_rate"] = box_proximity.mean().item()
+        self.extras["climbing_rate"]      = (climbing > 0.5).float().mean().item()
+
+        return reward
+
     # ── Success detection + subtask diagnostics ───────────────────────────────
 
     def _compute_success(self) -> torch.Tensor:

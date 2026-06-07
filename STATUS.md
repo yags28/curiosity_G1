@@ -1,6 +1,6 @@
 # CDL Project Status
-**Last updated:** 2026-06-04 (Session 4)
-**Timeline position:** Week 1 of 16 — Phase 1 (Environment Design, Weeks 1–3)
+**Last updated:** 2026-06-07 (Session 5)
+**Timeline position:** Week 4 of 16 — Phase 2 (Curiosity-Driven RL Training, Weeks 4–9)
 
 ---
 
@@ -85,16 +85,22 @@
 ---
 
 ## Phase 2 — Curiosity-Driven RL Training (Weeks 4–9)
-| Item | Status |
-|---|---|
-| RND curiosity module | Pending |
-| DRND curiosity module | Pending |
-| RDD curiosity module | Pending |
-| ICM baseline | Pending |
-| Asymmetric actor-critic (PPO) | Pending |
-| Reward annealing (α: 1.0 → 0.1) | Pending |
-| Hyperparameter sweeps | Pending |
-| ≥20% success on Distant Target (RND/DRND) | Pending |
+| Item | Status | Notes |
+|---|---|---|
+| RND curiosity module | **Done** | `src/curiosity/rnd.py`; 0% success on Task 1 (no CSV logs) |
+| DRND curiosity module | **Done** | `src/curiosity/drnd.py`; 100% success on Task 1 at 10M steps |
+| RDD curiosity module | **Done** | `src/curiosity/rdd.py`; 0% success on Task 1 |
+| ICM baseline | Pending | Not needed — DRND selected as primary method |
+| Asymmetric actor-critic (PPO) | **Done** | `src/agents/ppo.py`; generic curiosity interface |
+| Reward annealing (α: 1.0 → 0.1) | **Done** | Annealed over 5M steps; phase transition at ~4.8M |
+| Hyperparameter sweeps | Pending | `configs/sweep_rnd.yaml` ready; requires cluster |
+| ≥20% success on Distant Target | **Done** | DRND: **100% success**, ep_reward +1.246 |
+| DRND on all 5 tasks (no shaping) | **Done** | T1: 100%, T2: 0%, T3: 0%, T4: 100%, T5: 0% |
+| DRND T3+T5 re-run (with shaping) | **Running** | Background ID: bujyfvmyw; T3: 100%; T5: 100% at 33% (shaped composite working!) |
+| Task 2 re-run (10 kg + shaping) | **Pending** | b78ixvset crashed (OOM — stale log triggered too early); will re-run after bujyfvmyw completes |
+| Comparison plot (Task 1) | **Done** | `comparison.png` — DRND vs RDD; DRND wins decisively |
+| Tasks 2 & 3 failure analysis | **Done** | Root cause: multi-step sparse reward; fix = dense shaping + easier params |
+| Dense reward shaping T2, T3, T5 | **Done** | T2: box_proximity+climbing+hand_height; T3: stick_progress+target_progress; T5: traversal+box_proximity+climbing+hand_height |
 
 ---
 

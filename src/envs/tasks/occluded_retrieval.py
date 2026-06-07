@@ -246,6 +246,31 @@ class OccludedRetrievalEnv(ToolUseEnv):
             target_pos_rel, target_lin_vel, target_ang_vel, target_mass,
         ], dim=-1)   # (N, 20)
 
+    # ── Dense reward shaping ──────────────────────────────────────────────────
+
+    def _get_rewards(self) -> torch.Tensor:
+        reward = super()._get_rewards()   # time_penalty + success_reward
+
+        env_x = self.scene.env_origins[:, 0]   # (N,)
+
+        # 1. Stick X progress — reward for stick moving toward and past the barrier
+        #    0 at robot, 1 at barrier face (X=1.0m), 1.5 at target (X=1.4m)
+        stick_local_x = self.stick.data.root_pos_w[:, 0] - env_x
+        stick_progress = torch.clamp(stick_local_x / BARRIER_X, 0.0, 1.5)
+        reward += 0.0003 * stick_progress
+
+        # 2. Continuous target displacement — reward proportional to how far
+        #    target has moved from its spawn position (gradient toward success)
+        target_xy     = self.target.data.root_pos_w[:, :2]
+        displacement  = torch.norm(target_xy - self._target_spawn_xy, dim=-1)
+        target_progress = torch.clamp(displacement / SUCCESS_DISPLACEMENT, 0.0, 1.0)
+        reward += 0.001 * target_progress
+
+        self.extras["stick_past_barrier_rate"] = (stick_progress > 1.0).float().mean().item()
+        self.extras["target_progress_rate"]    = (target_progress > 0.1).float().mean().item()
+
+        return reward
+
     # ── Success detection ─────────────────────────────────────────────────────
 
     def _compute_success(self) -> torch.Tensor:
