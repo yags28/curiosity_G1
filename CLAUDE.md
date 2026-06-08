@@ -103,8 +103,18 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - **DRND** (COMPLETE, 10M steps): phase transition at ~4.8M → 44% → **100% success** at end; ep_reward=+1.246, ep_len=12 steps; CSV at `logs/distant_target__drnd__seed42/`
 - **RDD** (COMPLETE, 10M steps): **0% success throughout**; ep_len collapsed to 5.5 steps; disagreement signal decayed too fast; CSV at `logs/distant_target__rdd__seed42/`
 
+## Distillation / Phase 3
+- `src/distill/dagger.py` — `DAggerDistiller` + `StudentPolicy`; 20-iter DAgger loop; iter 0 uses teacher rollout (BC), iter 1+ uses student rollout labeled by teacher; aggregates dataset across iterations
+- `distill.py` — launcher (SimulationApp-first); args: `--config`, `--teacher`, `--viewer`, `--seed`, `--num-envs`
+- `configs/distill_local.yaml` — Task 1 distill config; teacher=`checkpoints/distant_target__drnd__seed42/step_9900288.pt`; 20 iters × 1000 collect_steps × 32 envs = 640K samples total
+- **Task 1 DAgger COMPLETE** — 20 iters, ~15 min; student hit 100% success at iter 3, held through iter 20; loss 332K→75; final checkpoint: `checkpoints/dagger__distant_target__seed42/iter_020.pt`
+- Bugs fixed: (1) `strict=False` in PyTorch raises on size mismatch → switched to loading `actor_mean` MLP sub-state-dict directly; (2) prior run must be killed before relaunch (GPU OOM)
+- Note: Kit buffers stdout — progress visible in `/home/kevin/isaacsim/kit/logs/Kit/Isaac-Sim Python/4.5/kit_*.log`, not the terminal
+- Logs: `logs/dagger__distant_target__seed42/metrics.csv`; checkpoints: `checkpoints/dagger__distant_target__seed42/iter_NNN.pt`
+
+- **Task 4 DAgger COMPLETE** — 20 iters, ~15 min; 100% success every iteration from iter 1; loss 146K→0.85 (88× lower final loss than Task 1); final checkpoint: `checkpoints/dagger__weight_lever__seed42/iter_020.pt`
+- `configs/distill_task4.yaml` — Task 4 config; teacher=`checkpoints/weight_lever__drnd__seed42/step_9900288.pt`
+
 ## Next Steps
-- DRND T3+T5 RUNNING (background ID: bujyfvmyw) via `scripts/run_drnd_shaped.sh`; T3 at 100% success already
-- DRND T2 QUEUED (background ID: b78ixvset) via `scripts/run_task2_after_chain.sh`; starts after T5; box mass 10 kg + dense shaping
-- Phase 3 after all 5 tasks: DAgger policy distillation + residual RL (`src/distill/`)
-- Cluster: RCAC account/GPU allocation (when available) — needed for Phase 4 sim-to-real
+- Tasks 2, 3, 5 need cluster (4096 envs × 50M steps) — RCAC GPU allocation pending
+- Phase 3 complete for locally-solvable tasks (1 & 4); Phase 4 sim-to-real depends on cluster results for Tasks 2/3/5

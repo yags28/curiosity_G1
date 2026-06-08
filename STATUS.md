@@ -96,8 +96,8 @@
 | Hyperparameter sweeps | Pending | `configs/sweep_rnd.yaml` ready; requires cluster |
 | ≥20% success on Distant Target | **Done** | DRND: **100% success**, ep_reward +1.246 |
 | DRND on all 5 tasks (no shaping) | **Done** | T1: 100%, T2: 0%, T3: 0%, T4: 100%, T5: 0% |
-| DRND T3+T5 re-run (with shaping) | **Running** | Background ID: bujyfvmyw; T3: 100%; T5: 100% at 33% (shaped composite working!) |
-| Task 2 re-run (10 kg + shaping) | **Pending** | b78ixvset crashed (OOM — stale log triggered too early); will re-run after bujyfvmyw completes |
+| DRND T3+T5 re-run (with shaping) | **Done** | T3: peak 100% then collapsed; T5: 0% (4-step chain too hard locally) |
+| Task 2 re-run (10 kg + shaping) | **Done** | 0% — ep_len=9.9 (robot falls immediately); needs cluster (4096 envs × 50M steps) |
 | Comparison plot (Task 1) | **Done** | `comparison.png` — DRND vs RDD; DRND wins decisively |
 | Tasks 2 & 3 failure analysis | **Done** | Root cause: multi-step sparse reward; fix = dense shaping + easier params |
 | Dense reward shaping T2, T3, T5 | **Done** | T2: box_proximity+climbing+hand_height; T3: stick_progress+target_progress; T5: traversal+box_proximity+climbing+hand_height |
@@ -105,11 +105,12 @@
 ---
 
 ## Phase 3 — Policy Distillation & Robustification (Weeks 10–11)
-| Item | Status |
-|---|---|
-| DAgger behaviour cloning | Pending |
-| Residual RL refinement | Pending |
-| MuJoCo sim-to-sim cross-validation | Pending |
+| Item | Status | Notes |
+|---|---|---|
+| DAgger behaviour cloning (Task 1) | **Done** | 100% success at iter 3, held all 20 iters; loss 332K→75; student: `checkpoints/dagger__distant_target__seed42/iter_020.pt` |
+| DAgger behaviour cloning (Task 4) | **Done** | 100% success all 20 iters; loss 146K→0.85; student: `checkpoints/dagger__weight_lever__seed42/iter_020.pt` |
+| Residual RL refinement | Pending | |
+| MuJoCo sim-to-sim cross-validation | Pending | |
 
 ---
 
