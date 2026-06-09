@@ -116,5 +116,6 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - `configs/distill_task4.yaml` — Task 4 config; teacher=`checkpoints/weight_lever__drnd__seed42/step_9900288.pt`
 
 ## Next Steps
-- Tasks 2, 3, 5 need cluster (4096 envs × 50M steps) — RCAC GPU allocation pending
+- **Critical blocker**: RCAC cluster allocation — Tasks 2/3/5 training + Phase 4 all depend on it
+- Local options while waiting: residual RL refinement on Tasks 1/4 students; MuJoCo sim-to-sim cross-validation; paper writing/analysis
 - Phase 3 complete for locally-solvable tasks (1 & 4); Phase 4 sim-to-real depends on cluster results for Tasks 2/3/5
