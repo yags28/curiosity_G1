@@ -115,7 +115,14 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - **Task 4 DAgger COMPLETE** — 20 iters, ~15 min; 100% success every iteration from iter 1; loss 146K→0.85 (88× lower final loss than Task 1); final checkpoint: `checkpoints/dagger__weight_lever__seed42/iter_020.pt`
 - `configs/distill_task4.yaml` — Task 4 config; teacher=`checkpoints/weight_lever__drnd__seed42/step_9900288.pt`
 
+## MuJoCo Sim-to-Sim Cross-Validation (Task 1)
+- `scripts/dump_isaac_contract.py` — dumps authoritative Isaac DOF order + soft limits + default pose → `logs/isaac_contract_<task>.json`. **Critical**: Isaac's joint order interleaves L/R by kinematic depth (idx0=left_hip_pitch, idx2=waist_yaw…), NOT the MJCF tree order — naive port feeds the policy garbage.
+- `src/distill/mujoco_eval.py` — loads contract, builds joint-name permutation Isaac↔MuJoCo, reconstructs 109-dim obs + action→target mapping, injects Task 1 tools (stick capsule + target pad) via MjSpec, runs student, reports success. Run: `python3 src/distill/mujoco_eval.py --episodes 30` (also `--standing-test`).
+- MuJoCo XML `g1_29dof_with_hand_rev_1_0.xml` matches the Isaac URDF (43 actuated joints + free base); torque `<motor>`s reconfigured to position servos (implicit, matches Isaac ImplicitActuatorCfg); `implicitfast` integrator; armature 0.03 legs/0.001 else.
+- **RESULT: 0% transfer** (0/30 episodes; robust at leg-Kp 1×/10×/30×). Robot topples in ~10 steps; **target pad never contacted (peak force 0.000 N)**. Findings: (1) the distilled policy is **bang-bang** — emits huge pre-clamp action means that saturate to ±1; clamped sign pattern encodes the motion (explains DAgger loss=75 yet 100% Isaac success). (2) Obs/action contract verified correct (pristine reset → jpos==default, zero vel). (3) Robot pose/mass/contacts correct (35.5 kg, feet on floor). Conclusion: the open-loop saturated policy overfit to PhysX contact dynamics; does not transfer to MuJoCo.
+- Caveat: fixed-pose "standing test" always topples (humanoid = inverted pendulum, needs active balance) — it is a passive diagnostic, not a pass/fail gate.
+
 ## Next Steps
 - **Critical blocker**: RCAC cluster allocation — Tasks 2/3/5 training + Phase 4 all depend on it
-- Local options while waiting: residual RL refinement on Tasks 1/4 students; MuJoCo sim-to-sim cross-validation; paper writing/analysis
-- Phase 3 complete for locally-solvable tasks (1 & 4); Phase 4 sim-to-real depends on cluster results for Tasks 2/3/5
+- Sim-to-sim follow-ups: run cross-val on Task 4 student (`dump_isaac_contract.py --task weight_lever`, then extend `_build_task1_model` for plank/box/fulcrum); investigate the bang-bang policy (add tanh squashing or action-rate penalty in distillation to get smoother, more transferable actions).
+- Phase 3 distillation complete for Tasks 1 & 4; Phase 4 sim-to-real depends on cluster results for Tasks 2/3/5

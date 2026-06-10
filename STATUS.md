@@ -110,7 +110,7 @@
 | DAgger behaviour cloning (Task 1) | **Done** | 100% success at iter 3, held all 20 iters; loss 332K→75; student: `checkpoints/dagger__distant_target__seed42/iter_020.pt` |
 | DAgger behaviour cloning (Task 4) | **Done** | 100% success all 20 iters; loss 146K→0.85; student: `checkpoints/dagger__weight_lever__seed42/iter_020.pt` |
 | Residual RL refinement | Pending | |
-| MuJoCo sim-to-sim cross-validation | Pending | |
+| MuJoCo sim-to-sim cross-validation | **Done (Task 1)** | Harness `src/distill/mujoco_eval.py` + `scripts/dump_isaac_contract.py`; **0% transfer** (0/30, robust to leg gain); robot topples in ~10 steps, target never touched. Policy is bang-bang (saturated actions) → overfit to PhysX. Task 4 cross-val pending. |
 
 ---
 
