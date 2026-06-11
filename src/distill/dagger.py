@@ -20,15 +20,27 @@ _SUCCESS_KEY: dict[str, str] = {
 
 
 class StudentPolicy(nn.Module):
-    """Standalone actor for deployment — no critics, no curiosity."""
+    """Standalone actor for deployment — no critics, no curiosity.
 
-    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256):
+    With tanh=True the action is squashed to (-1, 1): forward() returns
+    tanh(logits) and raw() exposes the pre-squash logits for a saturation
+    penalty. Param layout is identical either way, so checkpoints are
+    cross-compatible (the tanh flag lives in the checkpoint dict).
+    """
+
+    def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256,
+                 tanh: bool = False):
         super().__init__()
         self.mean_net = MLP(obs_dim, [hidden_dim, hidden_dim], action_dim, out_std=0.01)
         self.logstd   = nn.Parameter(torch.zeros(1, action_dim))
+        self.tanh     = tanh
+
+    def raw(self, obs: torch.Tensor) -> torch.Tensor:
+        return self.mean_net(obs)
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
-        return self.mean_net(obs)
+        a = self.mean_net(obs)
+        return torch.tanh(a) if self.tanh else a
 
 
 def _load_teacher(ckpt_path: str, obs_dim: int, action_dim: int,
@@ -66,9 +78,14 @@ class DAggerDistiller:
         self.beta_min       = d["beta_min"]
         self.beta_decay     = d["beta_decay"]
         hidden_dim          = d.get("hidden_dim", 256)
+        self.tanh           = d.get("tanh_squash", False)
+        self.sat_penalty    = d.get("saturation_penalty", 0.0)
+        # A tanh student can only match targets inside (-1,1), so always
+        # imitate the clamped teacher action (what actually drives the robot).
+        self.imitate_clamped = d.get("imitate_clamped", self.tanh)
 
         self.teacher = _load_teacher(teacher_ckpt, obs_dim, action_dim, hidden_dim, device)
-        self.student  = StudentPolicy(obs_dim, action_dim, hidden_dim).to(device)
+        self.student  = StudentPolicy(obs_dim, action_dim, hidden_dim, tanh=self.tanh).to(device)
         self.opt      = optim.Adam(self.student.parameters(), lr=d["lr"])
 
         self._obs_buf: list[torch.Tensor] = []
@@ -106,41 +123,57 @@ class DAggerDistiller:
         succ  = float(np.mean(ep_succ)) if ep_succ else 0.0
         return obs_t, act_t, succ
 
-    def _train(self) -> float:
-        """Supervised update on aggregated dataset; returns mean loss."""
+    def _train(self) -> tuple[float, float, float]:
+        """Supervised update on aggregated dataset.
+
+        Returns (imitation_loss, saturation_loss, mean_abs_action).
+        """
         obs = torch.cat(self._obs_buf, dim=0)
         act = torch.cat(self._act_buf, dim=0)
         N   = obs.shape[0]
-        losses: list[float] = []
+        imit_losses, sat_losses, abs_acts = [], [], []
 
         for _ in range(self.train_epochs):
             perm = torch.randperm(N, device=self.device)
             for start in range(0, N, self.batch_size):
-                mb   = perm[start : start + self.batch_size]
-                pred = self.student(obs[mb])
-                loss = ((pred - act[mb]) ** 2).mean()
+                mb     = perm[start : start + self.batch_size]
+                logits = self.student.raw(obs[mb])
+                pred   = torch.tanh(logits) if self.tanh else logits
+                target = act[mb].clamp(-1.0, 1.0) if self.imitate_clamped else act[mb]
+
+                imit = ((pred - target) ** 2).mean()
+                sat  = self.sat_penalty * (logits ** 2).mean()
+                loss = imit + sat
+
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
-                losses.append(loss.item())
 
-        return float(np.mean(losses))
+                imit_losses.append(imit.item())
+                sat_losses.append(sat.item())
+                abs_acts.append(pred.abs().mean().item())
+
+        return (float(np.mean(imit_losses)), float(np.mean(sat_losses)),
+                float(np.mean(abs_acts)))
 
     def run(self, env) -> None:
         task     = self.cfg["task"]
         seed     = self.cfg["seed"]
-        run_name = f"dagger__{task}__seed{seed}"
+        tag      = f"_tanh_p{int(round(self.sat_penalty * 1000)):03d}" if self.tanh else ""
+        run_name = f"dagger{tag}__{task}__seed{seed}"
         csv_dir  = os.path.join("logs", run_name)
         os.makedirs(csv_dir, exist_ok=True)
         csv_path = os.path.join(csv_dir, "metrics.csv")
         ckpt_dir = os.path.join("checkpoints", run_name)
         os.makedirs(ckpt_dir, exist_ok=True)
 
-        fields = ["iteration", "beta", "samples", "student_loss", "success_rate"]
+        fields = ["iteration", "beta", "samples", "imit_loss", "sat_loss",
+                  "mean_abs_action", "success_rate"]
         with open(csv_path, "w", newline="") as f:
             csv.DictWriter(f, fieldnames=fields).writeheader()
 
         print(f"[dagger] run={run_name} | iters={self.num_iterations} | "
+              f"tanh={self.tanh} | sat_penalty={self.sat_penalty} | "
               f"collect_steps={self.collect_steps} | envs={env.num_envs}")
 
         for it in range(self.num_iterations):
@@ -149,25 +182,28 @@ class DAggerDistiller:
             self._act_buf.append(act)
             total = sum(b.shape[0] for b in self._obs_buf)
 
-            loss = self._train()
+            imit, sat, mabs = self._train()
 
             print(
                 f"[dagger] iter={it+1:3d}/{self.num_iterations} | "
-                f"β={self.beta:.2f} | samples={total:,} | "
-                f"loss={loss:.6f} | success={succ:.2%}"
+                f"β={self.beta:.2f} | samples={total:,} | imit={imit:.4f} | "
+                f"sat={sat:.4f} | |a|={mabs:.3f} | success={succ:.2%}"
             )
 
             with open(csv_path, "a", newline="") as f:
                 csv.DictWriter(f, fieldnames=fields).writerow({
-                    "iteration":    it + 1,
-                    "beta":         self.beta,
-                    "samples":      total,
-                    "student_loss": loss,
-                    "success_rate": succ,
+                    "iteration":       it + 1,
+                    "beta":            self.beta,
+                    "samples":         total,
+                    "imit_loss":       imit,
+                    "sat_loss":        sat,
+                    "mean_abs_action": mabs,
+                    "success_rate":    succ,
                 })
 
             torch.save(
-                {"iteration": it + 1, "student": self.student.state_dict()},
+                {"iteration": it + 1, "student": self.student.state_dict(),
+                 "tanh": self.tanh},
                 os.path.join(ckpt_dir, f"iter_{it+1:03d}.pt"),
             )
 

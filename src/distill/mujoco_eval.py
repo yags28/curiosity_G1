@@ -34,11 +34,12 @@ _ROBOT_XML = (
     "g1_29dof_with_hand_rev_1_0.xml"
 )
 
-# Leg-stiffness multiplier. The cross-val outcome is robust to this knob
-# (0% success at 1×/10×/30×), so we keep the least-assumption value 1.0 —
-# nominal Isaac gains. Joints track their targets faithfully regardless; a
-# humanoid simply cannot balance on an open-loop target stream.
-_LEG_KP_SCALE = 1.0
+# Leg-stiffness multiplier. Isaac's implicit leg actuators track targets far
+# more stiffly than the same nominal Kp does as explicit MuJoCo torque, so at
+# 1× the legs sag and the robot collapses. At ~20× MuJoCo reproduces Isaac's
+# gross body motion (rises to ~0.85 m vs Isaac's 0.93 m). Set for fidelity to
+# the source dynamics so future (robust) policies get a fair test.
+_LEG_KP_SCALE = 20.0
 
 # Per-joint PD gains, mirrored from src/envs/g1_cfg.py actuator groups.
 # (stiffness, damping) keyed by a substring matched against the joint name.
@@ -114,12 +115,14 @@ def _build_task1_model(timestep: float) -> mujoco.MjModel:
     sg.type = mujoco.mjtGeom.mjGEOM_CAPSULE
     sg.size = [0.02, 0.45, 0.0]
     sg.mass = 0.3
+    sg.friction = [0.7, 0.005, 0.0001]   # Isaac stick μ≈0.6–0.8
 
     # Target pad: 20×20×2 cm box, fixed (no joint = kinematic).
     tgt = world.add_body(name="cdl_target", pos=list(_TARGET_POS))
     tg = tgt.add_geom()
     tg.type = mujoco.mjtGeom.mjGEOM_BOX
     tg.size = [0.10, 0.10, 0.01]
+    tg.friction = [1.0, 0.005, 0.0001]   # Isaac target μ=1.0
 
     m = spec.compile()
     m.opt.timestep = timestep
@@ -241,19 +244,24 @@ class MujocoG1:
         return self.data.qvel[self.root_vadr + 3 : self.root_vadr + 6].copy()
 
     def foot_contact(self):
-        out = np.zeros(4)
-        for k, bid in enumerate(self.foot_bodies):
-            f = np.zeros(6)
-            for ci in range(self.data.ncon):
-                con = self.data.contact[ci]
-                b1 = self.model.geom_bodyid[con.geom1]
-                b2 = self.model.geom_bodyid[con.geom2]
-                if bid in (b1, b2):
+        # Isaac reports contact on BOTH ankle bodies (pitch+roll) of a grounded
+        # foot, but the MJCF foot collision geom lives only on ankle_roll. So we
+        # compute a per-leg contact flag (either ankle body of that leg touching)
+        # and assign it to both the pitch and roll obs slots.
+        # foot_bodies order = [L_pitch, R_pitch, L_roll, R_roll].
+        leg = {0: False, 1: False}  # 0=left, 1=right
+        f = np.zeros(6)
+        for ci in range(self.data.ncon):
+            con = self.data.contact[ci]
+            bodies = (self.model.geom_bodyid[con.geom1],
+                      self.model.geom_bodyid[con.geom2])
+            for side, (bp, br) in enumerate(((self.foot_bodies[0], self.foot_bodies[2]),
+                                             (self.foot_bodies[1], self.foot_bodies[3]))):
+                if bp in bodies or br in bodies:
                     mujoco.mj_contactForce(self.model, self.data, ci, f)
                     if np.linalg.norm(f[:3]) > 1.0:
-                        out[k] = 1.0
-                        break
-        return out
+                        leg[side] = True
+        return np.array([leg[0], leg[1], leg[0], leg[1]], dtype=float)
 
     def observation(self):
         return np.concatenate([
@@ -319,8 +327,9 @@ def evaluate(ckpt_path: str, n_episodes: int = 50, max_steps: int = 200,
     c = IsaacContract("logs/isaac_contract_distant_target.json")
     g = MujocoG1(c, with_tools=True)
 
-    student = StudentPolicy(109, 43)
-    student.load_state_dict(torch.load(ckpt_path, map_location="cpu")["student"])
+    ckpt = torch.load(ckpt_path, map_location="cpu")
+    student = StudentPolicy(109, 43, tanh=ckpt.get("tanh", False))
+    student.load_state_dict(ckpt["student"])
     student.eval()
 
     rng = np.random.default_rng(seed)

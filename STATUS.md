@@ -110,7 +110,8 @@
 | DAgger behaviour cloning (Task 1) | **Done** | 100% success at iter 3, held all 20 iters; loss 332K→75; student: `checkpoints/dagger__distant_target__seed42/iter_020.pt` |
 | DAgger behaviour cloning (Task 4) | **Done** | 100% success all 20 iters; loss 146K→0.85; student: `checkpoints/dagger__weight_lever__seed42/iter_020.pt` |
 | Residual RL refinement | Pending | |
-| MuJoCo sim-to-sim cross-validation | **Done (Task 1)** | Harness `src/distill/mujoco_eval.py` + `scripts/dump_isaac_contract.py`; **0% transfer** (0/30, robust to leg gain); robot topples in ~10 steps, target never touched. Policy is bang-bang (saturated actions) → overfit to PhysX. Task 4 cross-val pending. |
+| MuJoCo sim-to-sim cross-validation | **Done (Task 1)** | Harness verified vs Isaac ground truth (obs0 matches exactly; student=9/10 in Isaac). Fixed foot-contact obs bug + leg-gain collapse. **0% transfer**: contact-rich stick grasp diverges (MuJoCo knocks stick away); policy is blind+bang-bang+open-loop → can't recover. Task 4 cross-val pending. |
+| Re-distill: tanh + saturation penalty | **Done — insufficient** | tanh actions + `λ·mean(logit²)`. λ=0.10 smooths \|a\| 0.91→0.75, keeps Isaac 100%, but MuJoCo still **0/20** (stick never approaches target). Smoothing is necessary-but-insufficient; bottleneck is blind open-loop policy. Next: closed-loop object obs (teacher retrain). |
 
 ---
 
