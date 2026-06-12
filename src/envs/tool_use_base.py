@@ -212,14 +212,23 @@ class ToolUseEnv(DirectRLEnv):
         return {"policy": actor_obs, "critic": critic_obs}
 
     def _build_actor_obs(self) -> torch.Tensor:
-        """(N, 109) proprioceptive observation for the actor."""
+        """(N, 109 + actor_task) proprioceptive obs (+ optional object pose)."""
         joint_pos  = self.robot.data.joint_pos                  # (N, 43)
         joint_vel  = self.robot.data.joint_vel                  # (N, 43)
         base_quat  = self.robot.data.root_quat_w                # (N, 4)  wxyz
         ang_vel    = self.robot.data.root_ang_vel_b             # (N, 3)
         foot_cont  = self._get_foot_contact()                   # (N, 4)
         wrist_ft   = torch.zeros(self.num_envs, 12, device=self.device)  # TODO: wire sensors §3.2
-        return torch.cat([joint_pos, joint_vel, base_quat, ang_vel, foot_cont, wrist_ft], dim=-1)
+        return torch.cat([joint_pos, joint_vel, base_quat, ang_vel, foot_cont,
+                          wrist_ft, self._get_actor_task_obs()], dim=-1)
+
+    def _get_actor_task_obs(self) -> torch.Tensor:
+        """Optional task-specific obs exposed to the ACTOR (closed-loop control).
+
+        Default: none (proprioception-only). Tasks that need the policy to see
+        objects (e.g. for sim-to-sim/sim-to-real transfer) override this.
+        """
+        return torch.zeros(self.num_envs, 0, device=self.device)
 
     def _build_base_privileged(self) -> torch.Tensor:
         """(N, 3) privileged info available to critic: base linear velocity."""

@@ -130,6 +130,17 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - **Verdict: smoothing is necessary-but-insufficient.** It works as designed (smoother actions, survival up, Isaac success intact) but does NOT fix transfer, because the bottleneck is the **blind open-loop policy + solver-specific grasp**, not action saturation. The robot never approaches the target in MuJoCo at any smoothness level.
 - **Next fix to try (bigger lift, teacher-side): closed-loop object observations** — the policy is currently proprioception-only and cannot correct a failed grasp; add stick/target pose to the actor obs and retrain the teacher (+ optional physics domain randomization). Distillation alone cannot inject what the teacher never demonstrated.
 
+### Closed-loop retrain (IN PROGRESS)
+- Success mechanism diagnosed (`scripts/diagnose_task1_success.py`): success = **stick propelled to the target** (stick is closest object 0.13–0.68 m at hit; both hands stay >1 m away). NOT a hand reach. Contact-rich/semi-ballistic → why it diverges in MuJoCo (stick deflects sideways).
+- **Changes**: (1) `tool_use_base._get_actor_task_obs()` hook (default empty); `DistantTargetEnv` overrides it → actor obs **109→115** (adds stick+target pos rel to pelvis); critic **132→138**. (2) Restitution domain randomization on stick (∈[0,0.4]) in `_reset_objects`. (3) `mujoco_eval` builds 115-dim closed-loop obs + auto-detects obs_dim/tanh from checkpoint. (4) Distiller supports `run_name` override.
+- **Retrain RUNNING**: `launch.py --config configs/local.yaml --task distant_target --curiosity drnd --no-wandb --run-name distant_target__drnd_cl__seed42` (10M steps, ~4 h, SPS~700, obs=115/critic=138 confirmed). Pre-flight 50k passed. Old teacher `distant_target__drnd__seed42` preserved.
+- **After retrain**: `python distill.py --config configs/distill_cl_tanh.yaml` (tanh, λ=0.10, run_name `dagger_cl__…`), then `python3 src/distill/mujoco_eval.py --ckpt checkpoints/dagger_cl__distant_target__seed42/iter_020.pt`.
+- **Timing**: SPS≈725 → teacher retrain ~4 h total (+~15 min distill +~1 min eval).
+- **Teacher retrain DONE** (10M, final success 90–100%); teacher `checkpoints/distant_target__drnd__local/step_9900288.pt` (115-dim).
+- **Distilling NOW** (`dagger_cl__distant_target__seed42`, tanh λ=0.10): at iter 6/20, healthy DAgger climb (iter5=79%), |a|≈0.74 (smoothed). ~10 min to finish → then MuJoCo eval on iter_020.pt.
+- NOTE: Kit logs are UTC (4h ahead of EDT) — don't misread as "stuck".
+- **GOTCHA**: `--no-wandb` writes to `checkpoints/distant_target__drnd__local/` (the `--run-name` flag only names the wandb run, not the PPO output dir). Distill with `--teacher <latest ckpt from that dir>`.
+
 ## Next Steps
 - **Critical blocker**: RCAC cluster allocation — Tasks 2/3/5 training + Phase 4 all depend on it
 - To make Task 1 transfer: retrain with closed-loop obs + smoother actions + domain randomization (see above), then re-run `mujoco_eval.py`.

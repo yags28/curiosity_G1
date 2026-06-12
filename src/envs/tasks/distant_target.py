@@ -35,7 +35,11 @@ from ..tool_use_base import BASE_CRITIC_DIM, ToolUseEnv, ToolUseEnvCfg
 
 N_OBJECTS = 2          # stick + target (distractors not included in obs)
 TASK_OBS_DIM = N_OBJECTS * (3 + 6 + 1)   # pos_rel + vel + mass = 10 × 2 = 20
-CRITIC_OBS_DIM = BASE_CRITIC_DIM + TASK_OBS_DIM  # 132
+# Closed-loop: actor also sees stick + target relative position (6) so the
+# policy can aim the stick rather than acting open-loop (sim-to-sim transfer).
+ACTOR_TASK_OBS_DIM = N_OBJECTS * 3       # stick_pos_rel + target_pos_rel = 6
+ACTOR_OBS_DIM_T1 = 109 + ACTOR_TASK_OBS_DIM            # 115
+CRITIC_OBS_DIM = BASE_CRITIC_DIM + ACTOR_TASK_OBS_DIM + TASK_OBS_DIM  # 112+6+20=138
 
 FORCE_THRESHOLD = 0.5  # Newtons — contact force required for success
 
@@ -64,8 +68,8 @@ class DistantTargetEnvCfg(ToolUseEnvCfg):
         num_envs=4096, env_spacing=4.0, replicate_physics=True
     )
 
-    observation_space: int = 109        # actor (no change)
-    state_space: int = CRITIC_OBS_DIM   # 132
+    observation_space: int = ACTOR_OBS_DIM_T1   # 115 (proprio 109 + stick/target rel 6)
+    state_space: int = CRITIC_OBS_DIM           # 138
     episode_length_s: float = 40.0
 
     # ── Stick (rigid, dynamic) ────────────────────────────────────────────────
@@ -188,6 +192,15 @@ class DistantTargetEnv(ToolUseEnv):
         self.scene.rigid_objects["distractor_1"] = self.distractor_1
         self.scene.sensors["target_contact"]     = self.target_contact
 
+    # ── Actor object obs (closed-loop) ────────────────────────────────────────
+
+    def _get_actor_task_obs(self) -> torch.Tensor:
+        """Stick + target position relative to pelvis (N, 6) — actor-visible."""
+        pelvis_pos = self.robot.data.root_pos_w
+        stick_rel  = self.stick.data.root_pos_w  - pelvis_pos
+        target_rel = self.target.data.root_pos_w - pelvis_pos
+        return torch.cat([stick_rel, target_rel], dim=-1)
+
     # ── Task observations (critic only) ───────────────────────────────────────
 
     def _get_task_obs(self) -> torch.Tensor:
@@ -255,6 +268,10 @@ class DistantTargetEnv(ToolUseEnv):
         fric_scale = 1.0 + (torch.rand(n, device=self.device) * 2 - 1) * FRICTION_RANGE
         self._stick_friction[env_ids, 0, 0] = STICK_NOMINAL_STATIC_FRICTION  * fric_scale
         self._stick_friction[env_ids, 0, 1] = STICK_NOMINAL_DYNAMIC_FRICTION * fric_scale
+        # Domain randomisation: restitution (contact bounce) ∈ [0, 0.4] — the
+        # contact property that differs most across physics engines, so the
+        # policy learns a stick interaction robust to the sim-to-sim gap.
+        self._stick_friction[env_ids, 0, 2] = torch.rand(n, device=self.device) * 0.4
         self.stick.root_physx_view.set_material_properties(
             self._stick_friction.cpu(), all_ids.cpu()
         )

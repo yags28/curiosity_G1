@@ -263,11 +263,23 @@ class MujocoG1:
                         leg[side] = True
         return np.array([leg[0], leg[1], leg[0], leg[1]], dtype=float)
 
-    def observation(self):
-        return np.concatenate([
-            self.joint_pos(), self.joint_vel(), self.base_quat(),
-            self.base_ang_vel_body(), self.foot_contact(), np.zeros(12),
-        ]).astype(np.float32)
+    def observation(self, closed_loop: bool = False):
+        parts = [self.joint_pos(), self.joint_vel(), self.base_quat(),
+                 self.base_ang_vel_body(), self.foot_contact(), np.zeros(12)]
+        if closed_loop:
+            # Match env._get_actor_task_obs: stick & target pos relative to
+            # pelvis, world frame (109 → 115).
+            parts += [self.stick_pos_rel(), self.target_pos_rel()]
+        return np.concatenate(parts).astype(np.float32)
+
+    def pelvis_pos(self):
+        return self.data.qpos[self.root_qadr : self.root_qadr + 3].copy()
+
+    def stick_pos_rel(self):
+        return self.data.qpos[self.stick_qadr : self.stick_qadr + 3] - self.pelvis_pos()
+
+    def target_pos_rel(self):
+        return self.data.xpos[self.target_bid] - self.pelvis_pos()
 
     def pelvis_height(self):
         return float(self.data.qpos[self.root_qadr + 2])
@@ -328,9 +340,13 @@ def evaluate(ckpt_path: str, n_episodes: int = 50, max_steps: int = 200,
     g = MujocoG1(c, with_tools=True)
 
     ckpt = torch.load(ckpt_path, map_location="cpu")
-    student = StudentPolicy(109, 43, tanh=ckpt.get("tanh", False))
+    obs_dim = ckpt["student"]["mean_net.net.0.weight"].shape[1]
+    closed_loop = obs_dim >= 115   # 115 = proprio 109 + stick/target rel 6
+    student = StudentPolicy(obs_dim, 43, tanh=ckpt.get("tanh", False))
     student.load_state_dict(ckpt["student"])
     student.eval()
+    print(f"[mujoco-eval] obs_dim={obs_dim} closed_loop={closed_loop} "
+          f"tanh={ckpt.get('tanh', False)}")
 
     rng = np.random.default_rng(seed)
     successes, lengths = 0, []
@@ -340,7 +356,7 @@ def evaluate(ckpt_path: str, n_episodes: int = 50, max_steps: int = 200,
         hit, fell, steps = False, False, max_steps
         for t in range(max_steps):
             with torch.no_grad():
-                obs = torch.from_numpy(g.observation()).unsqueeze(0)
+                obs = torch.from_numpy(g.observation(closed_loop)).unsqueeze(0)
                 action = student(obs).squeeze(0).numpy()
             g.apply_action(action)
             g.step()

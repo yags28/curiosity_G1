@@ -160,7 +160,7 @@ class DAggerDistiller:
         task     = self.cfg["task"]
         seed     = self.cfg["seed"]
         tag      = f"_tanh_p{int(round(self.sat_penalty * 1000)):03d}" if self.tanh else ""
-        run_name = f"dagger{tag}__{task}__seed{seed}"
+        run_name = self.cfg.get("run_name") or f"dagger{tag}__{task}__seed{seed}"
         csv_dir  = os.path.join("logs", run_name)
         os.makedirs(csv_dir, exist_ok=True)
         csv_path = os.path.join(csv_dir, "metrics.csv")
