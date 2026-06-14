@@ -140,6 +140,13 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - **Distilling NOW** (`dagger_cl__distant_target__seed42`, tanh λ=0.10): at iter 6/20, healthy DAgger climb (iter5=79%), |a|≈0.74 (smoothed). ~10 min to finish → then MuJoCo eval on iter_020.pt.
 - NOTE: Kit logs are UTC (4h ahead of EDT) — don't misread as "stuck".
 - **GOTCHA**: `--no-wandb` writes to `checkpoints/distant_target__drnd__local/` (the `--run-name` flag only names the wandb run, not the PPO output dir). Distill with `--teacher <latest ckpt from that dir>`.
+- **Closed-loop eval DONE — STILL 0/30 MuJoCo** (`dagger_cl` iter_020, Isaac ~77%, |a|=0.756). Full toolkit (closed-loop obs + restitution DR + tanh λ=0.10 + 10M retrain) did NOT move transfer off zero.
+
+### Diagnostic: WHY 0% (run 2026-06-14, per-step trace via mujoco_eval classes)
+- **Passive standing** (`--standing-test`, hold default pose, no policy): topples at t=1.0s. EXPECTED inverted-pendulum physics, NOT a harness bug — not the issue.
+- **Policy-driven trace**: both feet leave ground within 2 steps and stay off ([0 0 0 0] whole episode) — bang-bang action LAUNCHES the body. Stick tip moves **monotonically away** from target (0.75→1.19m), force 0 throughout. It's not a near-miss grasp; the stick is pushed the wrong way and the robot is airborne/tipping the entire time.
+- **Root cause CONFIRMED**: teacher is bang-bang (±1700, all 43 saturated); Task1 success in Isaac is a precise PhysX-tuned **ballistic lunge** that propels the stick. Same saturated joint-target sequence → totally different rigid-body trajectory under MuJoCo contact/integration. Maximally solver-sensitive. Distill-time tanh smoothing (|a|=0.75) doesn't help because the underlying MOTION is still ballistic.
+- **Targeted fix (next, teacher-side)**: add action-rate + torque penalties **in PPO** (so teacher learns smooth quasi-static reach, not a lunge) + heavier DR (PD gains, restitution, contact stiffness, latency); one ~4h retrain → re-distill → re-eval. Alternative: demonstrate transfer on Task 4 (quasi-static lever, not ballistic).
 
 ## Next Steps
 - **Critical blocker**: RCAC cluster allocation — Tasks 2/3/5 training + Phase 4 all depend on it

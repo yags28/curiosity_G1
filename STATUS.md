@@ -112,7 +112,7 @@
 | Residual RL refinement | Pending | |
 | MuJoCo sim-to-sim cross-validation | **Done (Task 1)** | Harness verified vs Isaac ground truth (obs0 matches exactly; student=9/10 in Isaac). Fixed foot-contact obs bug + leg-gain collapse. **0% transfer**: contact-rich stick grasp diverges (MuJoCo knocks stick away); policy is blind+bang-bang+open-loop → can't recover. Task 4 cross-val pending. |
 | Re-distill: tanh + saturation penalty | **Done — insufficient** | tanh actions + `λ·mean(logit²)`. λ=0.10 smooths \|a\| 0.91→0.75, keeps Isaac 100%, but MuJoCo still **0/20** (stick never approaches target). Smoothing is necessary-but-insufficient; bottleneck is blind open-loop policy. Next: closed-loop object obs (teacher retrain). |
-| Closed-loop teacher retrain | **In progress** | Diagnosed success = stick propelled to target (not hand reach). Added stick/target to actor obs (109→115), restitution DR. Retraining DRND `distant_target__drnd_cl__seed42` (10M, ~4h). Then re-distill (`distill_cl_tanh.yaml`) + re-eval. Aiming for high MuJoCo transfer. |
+| Closed-loop teacher retrain | **Done — still 0%** | Retrained DRND w/ closed-loop obs (109→115) + restitution DR; distilled `dagger_cl` (tanh λ=0.10, Isaac ~77%, \|a\|=0.756). MuJoCo **0/30**. Diagnostic (2026-06-14): passive stand topples at 1.0s (expected pendulum physics); under policy feet leave ground in 2 steps, stick tip moves AWAY (0.75→1.19m), force 0. Root cause = bang-bang ballistic lunge is solver-specific; distill smoothing can't fix teacher's motion. Fix = action-rate/torque penalty IN PPO + heavier DR (teacher retrain), or switch to quasi-static Task 4. |
 
 ---
 

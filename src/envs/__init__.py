@@ -33,6 +33,11 @@ def make_env(cfg: dict):
     )
     env_cfg.episode_length_s = ep_steps * control_dt
     env_cfg.seed = cfg.get("seed", 42)
+
+    # Action smoothness penalties (optional; default 0 = original behaviour)
+    rew = cfg.get("reward", {})
+    env_cfg.action_rate_penalty = rew.get("action_rate_penalty", 0.0)
+    env_cfg.action_mag_penalty  = rew.get("action_mag_penalty", 0.0)
     return EnvClass(env_cfg)
 
 gym.register(

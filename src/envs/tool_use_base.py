@@ -136,6 +136,10 @@ class ToolUseEnvCfg(DirectRLEnvCfg):
     fall_height: float = 0.5        # pelvis below this → fall termination
     success_reward: float = 1.0
     time_penalty: float = -0.001
+    # Action smoothness penalties (sim-to-sim transfer): discourage the
+    # bang-bang/ballistic motion that overfits PhysX contact dynamics.
+    action_rate_penalty: float = 0.0   # -coef * mean((a_t - a_{t-1})^2)
+    action_mag_penalty: float = 0.0    # -coef * mean(a_t^2)  (anti-saturation)
 
 
 # ── Base environment ──────────────────────────────────────────────────────────
@@ -162,6 +166,9 @@ class ToolUseEnv(DirectRLEnv):
 
         # Per-env success flag — set by _compute_success(), cleared on reset
         self._success_buf = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+
+        # Previous policy action (for action-rate penalty); zeroed on reset
+        self._prev_actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
 
     # ── Scene setup ───────────────────────────────────────────────────────────
 
@@ -253,6 +260,12 @@ class ToolUseEnv(DirectRLEnv):
         self._success_buf |= self._compute_success()
         reward = torch.full((self.num_envs,), self.cfg.time_penalty, device=self.device)
         reward += self._success_buf.float() * self.cfg.success_reward
+        if self.cfg.action_rate_penalty > 0.0:
+            reward -= self.cfg.action_rate_penalty * (
+                (self.actions - self._prev_actions) ** 2).mean(dim=-1)
+        if self.cfg.action_mag_penalty > 0.0:
+            reward -= self.cfg.action_mag_penalty * (self.actions ** 2).mean(dim=-1)
+        self._prev_actions = self.actions.clone()
         return reward
 
     @abstractmethod
@@ -274,6 +287,7 @@ class ToolUseEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
 
         self._success_buf[env_ids] = False
+        self._prev_actions[env_ids] = 0.0
 
         # Reset robot
         self.robot.reset(env_ids)
