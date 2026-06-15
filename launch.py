@@ -50,6 +50,7 @@ if args.curiosity   is not None: cfg["curiosity"]["method"]         = args.curio
 if args.num_envs    is not None: cfg["env"]["num_envs"]             = args.num_envs
 if args.total_steps is not None: cfg["training"]["total_timesteps"] = args.total_steps
 if args.resume      is not None: cfg["training"]["resume_checkpoint"] = args.resume
+if args.run_name    is not None: cfg["run_name"]                     = args.run_name
 
 # ── Launch Isaac Sim ──────────────────────────────────────────────────────────
 

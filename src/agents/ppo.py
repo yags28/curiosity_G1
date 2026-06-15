@@ -175,7 +175,7 @@ class PPOAgent:
         ckpt_every    = cfg["training"]["checkpoint_interval"]
         ckpt_dir      = cfg["training"]["checkpoint_dir"]
         method        = cfg["curiosity"]["method"]
-        run_name      = run.name if run else f"{task}__{method}__local"
+        run_name      = run.name if run else (cfg.get("run_name") or f"{task}__{method}__local")
 
         # ── CSV log setup (written regardless of wandb) ───────────────────────
         csv_dir  = os.path.join("logs", run_name)

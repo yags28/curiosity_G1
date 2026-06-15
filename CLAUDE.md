@@ -77,6 +77,10 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - PhysX set_masses/set_material_properties: CPU tensors + all-env indices required
 - IsaacLab URDF converter fix: `set_merge_fixed_ignore_inertia` absent in Isaac Sim 4.5 — guarded with `hasattr()` at `/home/kevin/IsaacLab/source/isaaclab/isaaclab/sim/converters/urdf_converter.py:143`
 
+## Architecture Notes
+- **No baseline locomotion policy** — training is end-to-end from scratch (random init). The robot must discover standing + tool use simultaneously. Position servo control (ImplicitActuatorCfg, joint-angle targets) provides implicit PD stability and partially substitutes for a locomotion backbone.
+- This is a known weakness: Tasks 2/3/5 may fail because the curiosity budget is consumed by locomotion discovery before tool-use is found. Task 1/4 succeed incidentally (ballistic lunge / lever geometry is easier to stumble into). Real-robot transfer requires a stable locomotion prior.
+
 ## Architecture / Key Files
 - `src/utils/networks.py` — `ActorCritic`: asymmetric actor (109 policy obs) + dual ext/int critics (132 privileged obs), 43-dim Gaussian
 - `src/curiosity/rnd.py` — RND: fixed target + trained predictor, Welford running normalizers
@@ -148,8 +152,20 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - **Root cause CONFIRMED**: teacher is bang-bang (±1700, all 43 saturated); Task1 success in Isaac is a precise PhysX-tuned **ballistic lunge** that propels the stick. Same saturated joint-target sequence → totally different rigid-body trajectory under MuJoCo contact/integration. Maximally solver-sensitive. Distill-time tanh smoothing (|a|=0.75) doesn't help because the underlying MOTION is still ballistic.
 - **Targeted fix (next, teacher-side)**: add action-rate + torque penalties **in PPO** (so teacher learns smooth quasi-static reach, not a lunge) + heavier DR (PD gains, restitution, contact stiffness, latency); one ~4h retrain → re-distill → re-eval. Alternative: demonstrate transfer on Task 4 (quasi-static lever, not ballistic).
 
+## Reporting
+- `scripts/make_project_update.py` — reportlab generator for `project_updatev1.pdf` (plain-language senior-facing project update, 2026-06-15). Covers: curiosity research (RND/DRND/RDD), asymmetric actor-critic architecture, 5 tasks table, training results (DRND wins, 100% Task 1), distillation, MuJoCo sim-to-sim transfer investigation + root cause (ballistic lunge / PhysX overfit), next steps. Regenerate: `python3 scripts/make_project_update.py`.
+
+## All-Task DRND Results (10M steps each, 2026-06-15)
+- **Task 1** (distant_target): 100% success — complete
+- **Task 2** (elevated_button): **0% success** — 0% throughout, rew≈-0.002, ep_len~10
+- **Task 3** (occluded_retrieval): **0% success** — 0% throughout, ep_len~4.6 (robot falling instantly)
+- **Task 4** (weight_lever): **100% success** — complete
+- **Task 5** (composite): **0% success** — 0% throughout, ep_len~11-14
+- Logs: `logs/{task}__drnd__seed42/metrics.csv`, checkpoints: `checkpoints/{task}__drnd__seed42/step_9900288.pt`
+
 ## Next Steps
-- **Critical blocker**: RCAC cluster allocation — Tasks 2/3/5 training + Phase 4 all depend on it
-- To make Task 1 transfer: retrain with closed-loop obs + smoother actions + domain randomization (see above), then re-run `mujoco_eval.py`.
+- **Critical blocker**: RCAC cluster allocation — Tasks 2/3/5 learning + Phase 4 all depend on it
+- Task 2/5 (0% success): likely need longer training or curriculum shaping; Task 3 (instant fall, ep_len 4.6) may have a fall-termination or environment bug
+- To make Task 1 transfer: retrain with `configs/local_robust.yaml` (action_rate_penalty=0.02, action_mag_penalty=0.01, closed-loop obs already in env), then re-run `mujoco_eval.py`.
 - Cross-val Task 4 once a transferable policy exists (`dump_isaac_contract.py --task weight_lever`; extend `_build_task1_model` for plank/box/fulcrum).
 - Phase 3 distillation complete for Tasks 1 & 4; Phase 4 sim-to-real depends on cluster results for Tasks 2/3/5
