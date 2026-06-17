@@ -1,12 +1,21 @@
 from src.curiosity.rnd import RNDModule
 from src.curiosity.drnd import DRNDModule
 from src.curiosity.rdd import RDDModule
+from src.curiosity.visual_rnd import VisualRNDModule
 
 
 def make_curiosity(cfg: dict, obs_dim: int, device: str):
     """Factory: instantiate the curiosity module specified in cfg['curiosity']['method']."""
     method = cfg["curiosity"]["method"]
     c = cfg["curiosity"][method]
+
+    if method == "visual_rnd":
+        return VisualRNDModule(
+            out_dim=c.get("out_dim", 256),
+            grasp_bonus=c.get("grasp_bonus", 0.5),
+            device=device,
+        )
+
     out_dim    = c.get("output_dim", 64)
     hidden_dim = c.get("hidden_dim", 256)
 
@@ -30,4 +39,4 @@ def make_curiosity(cfg: dict, obs_dim: int, device: str):
             device=device,
         )
     else:
-        raise ValueError(f"Unknown curiosity method: {method!r}. Choose rnd | drnd | rdd")
+        raise ValueError(f"Unknown curiosity method: {method!r}. Choose rnd | drnd | rdd | visual_rnd")

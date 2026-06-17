@@ -1,0 +1,79 @@
+# Visual curiosity config — egocentric depth camera + graspability classification.
+# Object detection and graspability come purely from the 64×64 head camera depth image.
+# Joint state is still used by the actor/critic for control; NOT used for object detection.
+#
+# Usage:
+#   python launch.py --config configs/local_visual.yaml --task distant_target --no-wandb
+
+wandb:
+  project: CDL-HumanoidToolUse
+  entity: ydawanka-purdue-university
+
+seed: 42
+task: distant_target
+
+env:
+  num_envs: 32
+  episode_length: 1000
+  device: cuda
+  headless: true
+  physics_dt: 0.005
+  control_dt: 0.02
+  randomise:
+    position_range: 0.30
+    mass_range: 0.30
+    friction_range: 0.50
+
+curiosity:
+  method: visual_rnd
+
+  visual_rnd:
+    out_dim: 256        # depth embedding dimension
+    grasp_bonus: 0.5    # additive reward when graspable object detected in view
+    lr: 1.0e-4
+
+  # kept for compatibility with other methods
+  rnd:
+    output_dim: 64
+    hidden_dim: 256
+    lr: 1.0e-4
+  drnd:
+    n_ensemble: 5
+    output_dim: 64
+    hidden_dim: 256
+    lr: 1.0e-4
+  rdd:
+    sigma: 1.0
+    output_dim: 64
+    hidden_dim: 256
+    lr: 1.0e-4
+
+ppo:
+  num_steps: 24
+  num_minibatches: 4
+  update_epochs: 5
+  lr: 3.0e-4
+  anneal_lr: true
+  gamma_int: 0.999
+  gamma_ext: 0.990
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 1.0
+  use_privileged_obs: true
+
+reward:
+  alpha_start: 1.0
+  alpha_end: 0.1
+  alpha_anneal_steps: 5_000_000
+  extrinsic_weight: 1.0
+  time_penalty: -0.001
+
+training:
+  total_timesteps: 10_000_000
+  checkpoint_interval: 100_000
+  log_interval: 10
+  checkpoint_dir: checkpoints/
+  video_dir: videos/
+  resume_checkpoint: null

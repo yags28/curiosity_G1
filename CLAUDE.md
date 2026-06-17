@@ -86,7 +86,9 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - `src/curiosity/rnd.py` — RND: fixed target + trained predictor, Welford running normalizers
 - `src/curiosity/drnd.py` — DRND: N independent (target, predictor) pairs; reward = mean MSE across ensemble
 - `src/curiosity/rdd.py` — RDD: 1 fixed target + N predictors; reward = inter-predictor variance (disagreement); sigma = bandwidth
-- `src/curiosity/__init__.py` — `make_curiosity(cfg, obs_dim, device)` factory: rnd | drnd | rdd
+- `src/curiosity/__init__.py` — `make_curiosity(cfg, obs_dim, device)` factory: rnd | drnd | rdd | visual_rnd
+- `src/curiosity/visual_rnd.py` — `VisualRNDModule`: RND on 64×64 depth embeddings + `GraspabilityHead` trained via depth heuristic; reward = visual novelty + grasp_bonus × P(graspable)
+- `src/utils/visual_encoder.py` — `DepthEncoder` (3-layer CNN, 64×64→256) + `GraspabilityHead` (256→1 sigmoid)
 - `src/agents/ppo.py` — PPO loop with generic `self.curiosity` interface; writes `logs/{run_name}/metrics.csv` every log interval
 - `plot_runs.py` — compare RND/DRND/RDD from CSVs: `python3 plot_runs.py [--smooth N] [--out file.png]`
 - `src/envs/__init__.py` — `make_env(cfg)` factory maps task name → env class + config
@@ -162,6 +164,16 @@ Curiosity methods: RND, DRND, RDD. Goal: sim-to-real transfer over 16 weeks, 5 t
 - **Task 4** (weight_lever): **100% success** — complete
 - **Task 5** (composite): **0% success** — 0% throughout, ep_len~11-14
 - Logs: `logs/{task}__drnd__seed42/metrics.csv`, checkpoints: `checkpoints/{task}__drnd__seed42/step_9900288.pt`
+
+## Visual Curiosity Pipeline (2026-06-17)
+- `make_head_camera_cfg()` already defined in `g1_cfg.py` (64×64 depth, head_link, 50 Hz) — was dead code
+- **Wired**: camera now instantiated in `ToolUseEnv._setup_scene()` when `use_camera=True` (default); depth tensor `(N,64,64)` added as `obs["depth"]` in `_get_observations()`
+- **Object detection**: purely from depth image — no joint state used for classification
+- **Graspability heuristic**: objects in 0.3–0.8 m depth range with 5–500 pixel blob count = graspable
+- **`VisualRNDModule`**: RND target+predictor on depth embeddings; `GraspabilityHead` trained jointly on heuristic labels; reward = RND novelty + `grasp_bonus × P(graspable)`
+- **PPO routing**: `use_visual_curiosity` flag; depth buffer allocated separately; critic obs still used for actor/critic value estimation
+- **Config**: `configs/local_visual.yaml` — run with `--config configs/local_visual.yaml --task distant_target --no-wandb`
+- **Not yet run** — Isaac Sim needed to verify camera render pipeline end-to-end
 
 ## Next Steps
 - **Critical blocker**: RCAC cluster allocation — Tasks 2/3/5 learning + Phase 4 all depend on it

@@ -26,7 +26,9 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensor, ContactSensorCfg
+from isaaclab.sensors import Camera, ContactSensor, ContactSensorCfg
+
+from .g1_cfg import make_head_camera_cfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporter, TerrainImporterCfg
 from isaaclab.utils import configclass
@@ -132,6 +134,9 @@ class ToolUseEnvCfg(DirectRLEnvCfg):
     state_space: int = BASE_CRITIC_DIM  # overridden by subclasses adding objects
     action_space: int = 43
 
+    # Camera
+    use_camera: bool = True   # enable egocentric depth camera for visual curiosity
+
     # Task-specific
     fall_height: float = 0.5        # pelvis below this → fall termination
     success_reward: float = 1.0
@@ -186,15 +191,20 @@ class ToolUseEnv(DirectRLEnv):
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self.terrain = self.cfg.terrain.class_type(self.cfg.terrain)
 
-        # 4. Task-specific objects (subclass spawns and registers before cloning)
+        # 4. Egocentric depth camera (head_link, 64×64 @ 50 Hz)
+        if self.cfg.use_camera:
+            self.head_camera = Camera(make_head_camera_cfg())
+            self.scene.sensors["head_camera"] = self.head_camera
+
+        # 5. Task-specific objects (subclass spawns and registers before cloning)
         self._setup_objects()
 
-        # 5. Clone all environments
+        # 6. Clone all environments
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
 
-        # 6. Lighting
+        # 7. Lighting
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
 
@@ -214,9 +224,14 @@ class ToolUseEnv(DirectRLEnv):
     # ── Observations ──────────────────────────────────────────────────────────
 
     def _get_observations(self) -> dict[str, torch.Tensor]:
-        actor_obs = self._build_actor_obs()
+        actor_obs  = self._build_actor_obs()
         critic_obs = torch.cat([actor_obs, self._build_base_privileged(), self._get_task_obs()], dim=-1)
-        return {"policy": actor_obs, "critic": critic_obs}
+        obs = {"policy": actor_obs, "critic": critic_obs}
+        if self.cfg.use_camera:
+            # (N, H, W, 1) → (N, H, W); NaN (no return) treated as max range
+            raw = self.head_camera.data.output["distance_to_image_plane"]
+            obs["depth"] = raw.squeeze(-1).nan_to_num(nan=5.0).clamp(0.0, 5.0)
+        return obs
 
     def _build_actor_obs(self) -> torch.Tensor:
         """(N, 109 + actor_task) proprioceptive obs (+ optional object pose)."""

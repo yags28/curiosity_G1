@@ -113,6 +113,7 @@ class PPOAgent:
 
         self.ac        = ActorCritic(obs_dim, critic_obs_dim, action_dim, hidden_dim=hidden_dim).to(device)
         self.curiosity = make_curiosity(cfg, critic_obs_dim, device)
+        self.use_visual_curiosity = (cfg["curiosity"]["method"] == "visual_rnd")
 
         self.opt_ppo = optim.Adam(self.ac.parameters(),                    lr=self.lr,      eps=1e-5)
         self.opt_rnd = optim.Adam(self.curiosity.predictor_parameters(),   lr=curiosity_lr, eps=1e-5)
@@ -192,13 +193,22 @@ class PPOAgent:
 
         buf = RolloutBuffer(self.num_steps, num_envs, obs_dim, critic_dim, action_dim, self.device)
 
+        # Depth buffer — only allocated when using visual curiosity
+        depth_h, depth_w = 64, 64
+        if self.use_visual_curiosity:
+            depth_buf = torch.zeros(self.num_steps, num_envs, depth_h, depth_w, device=self.device)
+
         obs_dict, _ = env.reset()
         next_pol    = obs_dict["policy"]
         next_crit   = obs_dict["critic"]
+        next_depth  = obs_dict.get("depth")
         next_done   = torch.zeros(num_envs, device=self.device)
 
         # Warm up curiosity obs running stats before first reward computation
-        self.curiosity.obs_rms.update(next_crit)
+        if self.use_visual_curiosity:
+            self.curiosity.obs_rms.update(next_depth)
+        else:
+            self.curiosity.obs_rms.update(next_crit)
 
         t0 = time.time()
 
@@ -229,16 +239,22 @@ class PPOAgent:
                 obs_dict, rew_ext, terminated, timed_out, extras = env.step(action.clamp(-1.0, 1.0))
 
                 # curiosity: update obs stats, compute intrinsic reward
-                self.curiosity.obs_rms.update(obs_dict["critic"])
-                rew_int = self.curiosity.compute_reward(obs_dict["critic"])
+                if self.use_visual_curiosity:
+                    next_depth = obs_dict["depth"]
+                    self.curiosity.obs_rms.update(next_depth)
+                    rew_int = self.curiosity.compute_reward(next_depth)
+                    depth_buf[step] = next_depth
+                else:
+                    self.curiosity.obs_rms.update(obs_dict["critic"])
+                    rew_int = self.curiosity.compute_reward(obs_dict["critic"])
 
                 buf.rew_ext[step] = rew_ext
                 buf.rew_int[step] = rew_int
 
-                done        = (terminated | timed_out).float()
-                next_done   = done
-                next_pol    = obs_dict["policy"]
-                next_crit   = obs_dict["critic"]
+                done       = (terminated | timed_out).float()
+                next_done  = done
+                next_pol   = obs_dict["policy"]
+                next_crit  = obs_dict["critic"]
 
                 self.global_step += num_envs
                 self._update_alpha()
@@ -275,6 +291,8 @@ class PPOAgent:
             b_adv     = adv.reshape(-1)
             b_ret_ext = ret_ext.reshape(-1)
             b_ret_int = ret_int.reshape(-1)
+            if self.use_visual_curiosity:
+                b_depth = depth_buf.reshape(-1, depth_h, depth_w)
 
             idx = torch.arange(batch_size, device=self.device)
             pg_losses, v_losses, ent_losses, curiosity_losses, kl_approx = [], [], [], [], []
@@ -304,7 +322,9 @@ class PPOAgent:
                     nn.utils.clip_grad_norm_(self.ac.parameters(), self.max_grad_norm)
                     self.opt_ppo.step()
 
-                    cur_loss = self.curiosity.predictor_loss(b_crit[mb])
+                    cur_loss = (self.curiosity.predictor_loss(b_depth[mb])
+                                if self.use_visual_curiosity
+                                else self.curiosity.predictor_loss(b_crit[mb]))
                     self.opt_rnd.zero_grad()
                     cur_loss.backward()
                     self.opt_rnd.step()
